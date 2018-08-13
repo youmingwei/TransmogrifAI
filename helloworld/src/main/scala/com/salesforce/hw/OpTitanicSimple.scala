@@ -31,6 +31,7 @@
 
 package com.salesforce.hw
 
+import com.salesforce.hw.iris.OpIris.randomSeed
 import com.salesforce.op._
 import com.salesforce.op.evaluators.Evaluators
 import com.salesforce.op.features.FeatureBuilder
@@ -38,6 +39,7 @@ import com.salesforce.op.features.types._
 import com.salesforce.op.readers.DataReaders
 import com.salesforce.op.stages.impl.classification.BinaryClassificationModelSelector
 import com.salesforce.op.stages.impl.classification.ClassificationModelsToTry._
+import com.salesforce.op.stages.impl.tuning.{DataBalancer, DataCutter}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
@@ -60,7 +62,7 @@ import org.apache.spark.sql.SparkSession
 case class Passenger
 (
   id: Int,
-  survived: Int,
+  survived: Option[Int],
   pClass: Option[Int],
   name: Option[String],
   sex: Option[String],
@@ -72,6 +74,7 @@ case class Passenger
   cabin: Option[String],
   embarked: Option[String]
 )
+
 
 /**
  * A simplified Optimus Prime example classification app using the Titanic dataset
@@ -90,6 +93,9 @@ object OpTitanicSimple {
     val csvFilePath = args(0)
     println(s"Using user-supplied CSV file path: $csvFilePath")
 
+    // hack for having train and test csv path
+    val testCsvFilePath = args(1)
+
     // Set up a SparkSession as normal
     val conf = new SparkConf().setAppName(this.getClass.getSimpleName.stripSuffix("$"))
     implicit val spark = SparkSession.builder.config(conf).getOrCreate()
@@ -99,7 +105,7 @@ object OpTitanicSimple {
     /////////////////////////////////////////////////////////////////////////////////
 
     // Define features using the OP types based on the data
-    val survived = FeatureBuilder.RealNN[Passenger].extract(_.survived.toRealNN).asResponse
+    val survived = FeatureBuilder.RealNN[Passenger].extract(_.survived.getOrElse(0).toRealNN).asResponse
 
     val pClass = FeatureBuilder.PickList[Passenger].extract(_.pClass.map(_.toString).toPickList).asPredictor
 
@@ -125,20 +131,16 @@ object OpTitanicSimple {
     // TRANSFORMED FEATURES
     /////////////////////////////////////////////////////////////////////////////////
 
-    // Do some basic feature engineering using knowledge of the underlying dataset
-    val familySize = sibSp + parCh + 1
-    val estimatedCostOfTickets = familySize * fare
-    // val pivotedSex = sex.map[PickList](v => v).pivot()
-    val pivotedSex = sex.pivot()
-    val normedAge = age.fillMissingWithMean().zNormalize()
-    val ageGroup = age.map[PickList](_.value.map(v => if (v > 18) "adult" else "child").toPickList)
-
-    // Define a feature of type vector containing all the predictors you'd like to use
-    val passengerFeatures = Seq(
-      pClass, name, age, sibSp, parCh, ticket,
-      cabin, embarked, familySize, estimatedCostOfTickets,
-      pivotedSex, ageGroup
-    ).transmogrify()
+//    val familySize = sibSp + parCh + 1
+//    val estimatedCostOfTickets = familySize * fare
+//    val normedAge = age.fillMissingWithMean().zNormalize()
+//    val ageGroup = age.map[PickList](_.value.map(v => if (v > 18) "adult" else "child").toPickList)
+//
+//
+//    val passengerFeatures = Seq(
+//      pClass, name, sex, age, sibSp, parCh, ticket,
+//      cabin, embarked, familySize, estimatedCostOfTickets, ageGroup).transmogrify()
+    val passengerFeatures = Seq(pClass, name, age, sibSp, parCh, ticket, sex, fare, cabin, embarked).transmogrify()
 
     // Optionally check the features with a sanity checker
     val sanityCheck = true
@@ -146,9 +148,9 @@ object OpTitanicSimple {
 
     // Define the model we want to use (here a simple logistic regression) and get the resulting output
     val (prediction, rawPrediction, prob) =
-      BinaryClassificationModelSelector.withTrainValidationSplit()
-        .setModelsToTry(LogisticRegression)
+      BinaryClassificationModelSelector.withCrossValidation(splitter = None)
         .setInput(survived, finalFeatures).getOutput()
+
 
     val evaluator = Evaluators.BinaryClassification()
       .setLabelCol(survived)
@@ -177,13 +179,44 @@ object OpTitanicSimple {
     val fittedWorkflow = workflow.train()
     println(s"Summary: ${fittedWorkflow.summary()}")
 
-    // Manifest the result features of the workflow
+
+    // Scoring model on train set
     println("Scoring the model")
     val (dataframe, metrics) = fittedWorkflow.scoreAndEvaluate(evaluator = evaluator)
-
-    println("Transformed dataframe columns:")
-    dataframe.columns.foreach(println)
     println("Metrics:")
     println(metrics)
+
+    println(" MODEL INSIGHTS")
+    println(fittedWorkflow.modelInsights(prediction).toJson())
+
+
+
+
+    val testDataReader = DataReaders.Simple.csvCase[Passenger](
+      path = Option(testCsvFilePath),
+      key = _.id.toString
+    )
+
+    println("Scoring test dataset")
+    fittedWorkflow.setReader(testDataReader)
+    var dataframeTest = fittedWorkflow.score()
+
+
+    println("Transformed test dataframe columns:")
+    dataframeTest.columns.foreach(println)
+
+
+    // getting rid of extra data frames and writing to scores to file
+    dataframeTest = dataframeTest.drop(dataframeTest.col
+    ("age-cabin-embarked-fare-name-pClass-parCh-sex-sibSp-survived-ticket_11-stagesApplied_OPVector_000000000019"))
+    dataframeTest = dataframeTest.drop(dataframeTest.col
+    ("age-cabin-embarked-fare-name-pClass-parCh-sex-sibSp-survived-ticket_12-stagesApplied_OPVector_00000000001a"))
+    dataframeTest = dataframeTest.drop(dataframeTest.col
+    ("survived"))
+
+    println("Transformed test dataframe columns (after drops):")
+    dataframeTest.columns.foreach(println)
+    dataframeTest.write.format("com.databricks.spark.csv").save("titanicTestResults.csv")
+
   }
 }
