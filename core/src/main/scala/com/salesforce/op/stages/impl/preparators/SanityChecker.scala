@@ -636,7 +636,7 @@ class SanityChecker(uid: String = UID[SanityChecker])
     Seq[(OpVectorColumnMetadata, OpVectorColumnMetadata)]) = {
     log.info("Calculating Possible Duplicates in Sanity Checker: ")
     val possibleDuplicates = getPotentialDuplicates(
-      stats.filterNot(x => alreadyDropped.contains(x) || x.isLabel).toList)
+      stats.filterNot(x => x.isLabel).toList)
     log.info("Calculating Actual Duplicates in the Sanity Checker ")
     getActualDuplicates(possibleDuplicates, vectorRows)
   }
