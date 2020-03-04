@@ -50,7 +50,7 @@ class JobGroupUtilTest extends FlatSpec with TestCommon with TestSparkContext {
       spark.sparkContext.parallelize(Seq(1, 2, 3, 4, 5)).collect()
     }
     spark.sparkContext.parallelize(Seq(1, 2, 3, 4, 5)).collect()
-    // Ensure that the last `.collect()` was not tagged with "ReadAndFilter"
+    // Ensure that the last `.collect()` was not tagged with "DataReadingAndFiltering"
     spark.sparkContext.statusTracker.getJobIdsForGroup(null) should not be empty
   }
 }
