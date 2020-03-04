@@ -185,7 +185,12 @@ E <: Estimator[_] with OpPipelineStage2[RealNN, OPVector, Prediction]]
     val meta = metadataSummary.toMetadata(skipUnsupported = true)
     setMetadata(meta.toSummaryMetadata())
 
-    val selectedModel = new SelectedModel(bestModel.asInstanceOf[ModelType], outputsColNamesMap, uid = uid, operationName = operationName)
+    val selectedModel = new SelectedModel(
+      bestModel.asInstanceOf[ModelType],
+      outputsColNamesMap,
+      uid = uid,
+      operationName = operationName
+    )
       .setInput(in1.asFeatureLike[RealNN], in2.asFeatureLike[OPVector])
       .setParent(this)
       .setMetadata(getMetadata())
