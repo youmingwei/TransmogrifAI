@@ -220,7 +220,7 @@ class OpWorkflowModel(val uid: String = UID[OpWorkflowModel], val trainingParams
    * @param path      path to save the model
    * @param overwrite should overwrite if the path exists
    */
-  def save(path: String, overwrite: Boolean = true): Unit = {
+  def save(path: String, overwrite: Boolean = true)(implicit spark: SparkSession): Unit = {
     OpWorkflowModelWriter.save(this, path = path, overwrite = overwrite)
   }
 
