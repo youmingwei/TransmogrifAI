@@ -34,6 +34,7 @@ import com.salesforce.op.features.OPFeature
 import com.salesforce.op.stages.impl.selector.ModelSelectorNames.{EstimatorType, ModelType}
 import com.salesforce.op.stages.impl.selector.{HasTestEval, ModelSelector, ModelSelectorNames}
 import com.salesforce.op.stages.{OPStage, OpTransformer}
+import com.salesforce.op.utils.spark.{JobGroupUtil, OpStep}
 import com.salesforce.op.{OpWorkflow, OpWorkflowModel}
 import org.apache.spark.ml.{Estimator, Model, Transformer}
 import org.apache.spark.rdd.RDD
@@ -222,17 +223,19 @@ private[op] case object FitStagesUtil {
     val alreadyFitted: ListBuffer[OPStage] = ListBuffer(fittedTransformers: _*)
     val (newTrain, newTest) =
       dag.foldLeft(train -> test) { case ((currTrain, currTest), stagesLayer) =>
-        val index = stagesLayer.head._2
-        val FittedDAG(newTrain, newTest, justFitted) = fitAndTransformLayer(
-          stagesLayer = stagesLayer,
-          train = currTrain,
-          test = currTest,
-          hasTest = hasTest,
-          transformData = indexOfLastEstimator.exists(_ < index), // only need to update for fit before last estimator
-          persistEveryKStages = persistEveryKStages
-        )
-        alreadyFitted ++= justFitted
-        newTrain -> newTest
+        JobGroupUtil.withJobGroup(OpStep.FeatureEngineering) {
+          val index = stagesLayer.head._2
+          val FittedDAG(newTrain, newTest, justFitted) = fitAndTransformLayer(
+            stagesLayer = stagesLayer,
+            train = currTrain,
+            test = currTest,
+            hasTest = hasTest,
+            transformData = indexOfLastEstimator.exists(_ < index), // only need to update for fit before last estimator
+            persistEveryKStages = persistEveryKStages
+          )
+          alreadyFitted ++= justFitted
+          newTrain -> newTest
+        }
       }
 
     FittedDAG(newTrain, newTest, alreadyFitted.toArray)
