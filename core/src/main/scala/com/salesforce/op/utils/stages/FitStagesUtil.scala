@@ -105,14 +105,16 @@ private[op] case object FitStagesUtil {
       }
       val transforms = opStages.map(_.transformRow)
       val transformed: RDD[Row] =
-        df.rdd.map { (row: Row) =>
-          val values = new Array[Any](row.length + transforms.length)
-          var i = 0
-          while (i < values.length) {
-            values(i) = if (i < row.length) row.get(i) else transforms(i - row.length)(row)
-            i += 1
+        JobGroupUtil.withJobGroup(OpStep.Scoring) {
+          df.rdd.map { (row: Row) =>
+            val values = new Array[Any](row.length + transforms.length)
+            var i = 0
+            while (i < values.length) {
+              values(i) = if (i < row.length) row.get(i) else transforms(i - row.length)(row)
+              i += 1
+            }
+            Row.fromSeq(values)
           }
-          Row.fromSeq(values)
         }
 
       spark.createDataFrame(transformed, newSchema).persist()
@@ -152,7 +154,9 @@ private[op] case object FitStagesUtil {
       transformers.zipWithIndex.foldLeft(data) { case (df, (stage, i)) =>
         val persist = i > 0 && i % persistEveryKStages == 0
         log.info(s"Applying stage: ${stage.uid}{}", if (persist) " (persisted)" else "")
-        val newDF = stage.asInstanceOf[Transformer].transform(df)
+        val newDF = JobGroupUtil.withJobGroup(OpStep.Scoring) {
+          stage.asInstanceOf[Transformer].transform(df)
+        }
         if (!persist) newDF
         else {
           // Converting to rdd and back here to break up Catalyst [SPARK-13346]

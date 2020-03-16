@@ -332,21 +332,18 @@ private[op] trait OpWorkflowCore {
 
     // Apply stages layer by layer
     dag.foldLeft(rawData) { case (df, stagesLayer) =>
-      // Set job group inside this loop to counter the fact that some stages might reset it.
-      JobGroupUtil.withJobGroup(OpStep.Scoring) {
-        // Apply all OP stages
-        val opStages = stagesLayer.collect { case (s: OpTransformer, _) => s }
-        val dfTransformed: DataFrame = FitStagesUtil.applyOpTransformations(opStages, df)
+      // Apply all OP stages
+      val opStages = stagesLayer.collect { case (s: OpTransformer, _) => s }
+      val dfTransformed: DataFrame = FitStagesUtil.applyOpTransformations(opStages, df)
 
-        lastPersisted.foreach(_.unpersist())
-        lastPersisted = Some(dfTransformed)
+      lastPersisted.foreach(_.unpersist())
+      lastPersisted = Some(dfTransformed)
 
-        // Apply all non OP stages (ex. Spark wrapping stages etc)
-        val sparkStages = stagesLayer.collect {
-          case (s: Transformer, _) if !s.isInstanceOf[OpTransformer] => s.asInstanceOf[Transformer]
-        }
-        FitStagesUtil.applySparkTransformations(dfTransformed, sparkStages, persistEveryKStages)
+      // Apply all non OP stages (ex. Spark wrapping stages etc)
+      val sparkStages = stagesLayer.collect {
+        case (s: Transformer, _) if !s.isInstanceOf[OpTransformer] => s.asInstanceOf[Transformer]
       }
+      FitStagesUtil.applySparkTransformations(dfTransformed, sparkStages, persistEveryKStages)
     }
   }
 
